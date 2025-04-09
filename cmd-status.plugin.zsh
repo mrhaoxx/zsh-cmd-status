@@ -1,6 +1,8 @@
-
 # load colors module that allows things like $fg[red]
 autoload colors && colors
+
+# Load the zsh/datetime module for high-precision timestamps
+zmodload zsh/datetime
 
 : ${ZSH_CMD_STATUS_DURATION_THRESHOLD:=10}
 
@@ -13,15 +15,19 @@ function _zsh_cmd_return_code() {
 
 function _zsh_cmd_render_duration() {
   local duration=$1
-  local sec=$(( duration % 60 ))
-  local min=$(( duration % 3600 / 60 ))
-  local hour=$(( duration / 3600 ))
+  # Fix: use truncation via arithmetic instead of int() function
+  local ms=$(( (duration - ${duration%.*}) * 1000 ))
+  local sec=$(( ${duration%.*} % 60 ))
+  local min=$(( ${duration%.*} % 3600 / 60 ))
+  local hour=$(( ${duration%.*} / 3600 ))
   if [[ $hour -gt 0 ]]; then
-    printf '%dh %dm %ds' $hour $min $sec
+    printf '%dh %dm %ds %dms' $hour $min $sec $ms
   elif [[ $min -gt 0 ]]; then
-    printf '%dm %ds' $min $sec
+    printf '%dm %ds %dms' $min $sec $ms
+  elif [[ $sec -gt 0 ]]; then
+    printf '%ds %dms' $sec $ms
   else
-    printf '%ds' $sec
+    printf '%dms' $ms
   fi
 }
 
@@ -30,10 +36,11 @@ function _zsh_cmd_duration() {
       return 0
   fi
   local end_time
-  end_time="$SECONDS"
+  end_time="$EPOCHREALTIME"
   local duration=$(( end_time - _zsh_cmd_status_start_time ))
   local threshold=${ZSH_CMD_STATUS_DURATION_THRESHOLD:=10}
-  if [ "$duration" -lt "$threshold" ]; then
+  # Fix: compare the integer part using parameter expansion
+  if (( ${duration%.*} < threshold )); then
     return 0
   fi
   pretty="$(_zsh_cmd_render_duration ${duration})"
@@ -42,7 +49,7 @@ function _zsh_cmd_duration() {
 
 function _zsh-cmd-status-preexec() {
   _zsh_cmd_status_preexec_was_run=true
-  _zsh_cmd_status_start_time="$SECONDS"
+  _zsh_cmd_status_start_time="$EPOCHREALTIME"
 }
 
 function _zsh-cmd-status-precmd() {
